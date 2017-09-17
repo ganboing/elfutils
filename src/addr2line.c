@@ -77,6 +77,7 @@ static const struct argp_option options[] =
     N_("Print all information on one line, and indent inlines"), 0 },
 
   { NULL, 0, NULL, 0, N_("Miscellaneous:"), 0 },
+  { "statusfd", 'd', "STATUS_FD", 0, N_("file descriptor for control channel"), 0 },
   /* Unsupported options.  */
   { "target", 'b', "ARG", OPTION_HIDDEN, NULL, 0 },
   { "demangler", OPT_DEMANGLER, "ARG", OPTION_HIDDEN, NULL, 0 },
@@ -138,6 +139,8 @@ static bool demangle;
 /* True if all information should be printed on one line.  */
 static bool pretty;
 
+static int status_fd = -1;
+
 #ifdef USE_DEMANGLE
 static size_t demangle_buffer_len = 0;
 static char *demangle_buffer = NULL;
@@ -167,6 +170,7 @@ main (int argc, char *argv[])
   Dwfl *dwfl = NULL;
   (void) argp_parse (&argp, argc, argv, 0, &remaining, &dwfl);
   assert (dwfl != NULL);
+  assert (status_fd == -1 || status_fd >= 0);
 
   /* Now handle the addresses.  In case none are given on the command
      line, read from stdin.  */
@@ -180,6 +184,8 @@ main (int argc, char *argv[])
       ssize_t chars;
       while (!feof_unlocked (stdin))
 	{
+          signed char r = 0;
+
 	  if ((chars = getline (&buf, &len, stdin)) < 0)
 	    break;
 
@@ -187,6 +193,11 @@ main (int argc, char *argv[])
 	    buf[chars - 1] = '\0';
 
 	  result = handle_address (buf, dwfl);
+          if (status_fd != -1)
+            {
+              r = result ? 'N' : 'Y';
+              (void)write(status_fd, &r, 1);
+            }
 	}
 
       free (buf);
@@ -263,6 +274,10 @@ parse_opt (int key, char *arg, struct argp_state *state)
 
     case OPT_PRETTY:
       pretty = true;
+      break;
+
+    case 'd':
+      status_fd = atoi(arg);
       break;
 
     default:
@@ -611,7 +626,7 @@ handle_address (const char *string, Dwfl *dwfl)
       if (sscanf (string, "(%m[^)])%" PRIiMAX "%n", &name, &addr, &i) == 2
 	  && string[i] == '\0')
 	parsed = adjust_to_section (name, &addr, dwfl);
-      switch (sscanf (string, "%m[^-+]%n%" PRIiMAX "%n", &name, &i, &addr, &j))
+      else switch (sscanf (string, "%m[^-+]%n%" PRIiMAX "%n", &name, &i, &addr, &j))
 	{
 	default:
 	  break;
