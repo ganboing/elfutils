@@ -196,6 +196,7 @@ main (int argc, char *argv[])
           if (status_fd != -1)
             {
               r = result ? 'N' : 'Y';
+              fflush(stdout);
               (void)write(status_fd, &r, 1);
             }
 	}
